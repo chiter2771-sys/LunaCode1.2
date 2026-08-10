@@ -206,3 +206,59 @@ Continue) в этой версии не реализована — все нас
   проще и надёжнее совместить с tool calling у большинства провайдеров).
 - Автоматическое определение цены по названию модели у известных
   провайдеров (сейчас цена вводится вручную для точности).
+
+## Architecture modernization audit (2026-08-10)
+
+Проведён аудит исходного расширения перед рефакторингом. Главные выводы:
+
+- Архитектура была слишком плоской: provider-specific HTTP, agent loop, usage accounting и tool schemas жили преимущественно в `aiClient.ts`, а WebView управлял состоянием запросов без полноценной отмены.
+- Tool system был статическим массивом: новые инструменты нельзя было регистрировать независимо, не было категорий, safe-for-parallel metadata и единой точки расширения под MCP.
+- Path traversal защита ограничивалась `Uri.joinPath(root, clean)`, что недостаточно для строгого запрета выхода за workspace.
+- Context management был почти отсутствующим: история просто обрезалась до 60 сообщений, без активного файла, selection, diagnostics, git/context budget и dedupe.
+- Agent loop имел лимит шагов, но не имел AbortController, повторяемость tool calls не анализировалась, параллельность и permissions не моделировались как отдельные подсистемы.
+- Terminal tool использовал одноразовый `exec()` без typed exit code/timeout policy/cancellation metadata и без базовой классификации опасных команд.
+- WebView имел CSP и textContent-based рендеринг кусков markdown, но не имел Stop button, request lifecycle UI и строгой проверки входящих сообщений.
+- Persistence была односессионной: отсутствовали несколько чатов, rename/delete/duplicate/search и context compaction.
+
+## Новая архитектурная основа
+
+Рефакторинг добавил модульные подсистемы, сохранив существующие команды, HHChat/OpenAI/Anthropic настройки, streaming и agent-mode:
+
+```text
+src/
+  core/
+    agent/              future orchestration boundary
+    context/            context budget manager
+    errors/             typed LunaCode errors
+    permissions/        permission boundary placeholder
+    providers/          AIProvider interfaces, model capabilities, request/stream types
+    sessions/           session boundary placeholder
+    tools/              ToolDefinition/LunaTool/ToolRegistry
+  context/              ContextManager for active editor, selection, open files, diagnostics
+  providers/
+    hhchat/             HHChat model catalog isolated from generic AI client
+  tools/
+    diagnostics/        get_diagnostics
+    filesystem/         list/read/range/write/create tools with safe path resolving
+    git/                git_status/git_diff/git_log/git_show/git_branch/git_blame
+    search/             search_files/search_text
+    terminal/           cancellable terminal command tool with timeout and safety prompt
+    registry/           default tool registration composition root
+  utils/                workspace-safe path resolver and binary detection
+```
+
+### Реализованные foundational возможности
+
+- `ToolRegistry` регистрирует инструменты независимо (`toolRegistry.register(tool)`) и хранит metadata: категория, readonly/write, safeForParallel.
+- Добавлены workspace-aware инструменты: `search_files`, `search_text`, `read_file_range`, `read_lines`, `get_diagnostics`, `git_status`, `git_diff`, `git_log`, `git_show`, `git_branch`, `git_blame`.
+- File tools теперь используют строгий `safeResolveWorkspacePath()`, который резолвит путь через `path.resolve()` и запрещает выход за корень workspace.
+- `read_file` возвращает metadata, ограничивает объём ответа и распознаёт бинарные файлы.
+- Terminal tool перешёл на `spawn()` с timeout, stdout/stderr, exit code, AbortSignal и предупреждением для потенциально опасных команд.
+- Chat/agent requests получили Stop lifecycle: WebView показывает кнопку Stop, extension host держит `AbortController`, streaming reader и tools получают signal.
+- Добавлен `ContextBudgetManager` и `ContextManager` как база для релевантного контекста: активный файл, выделение, открытые файлы, diagnostics и token budget.
+- Добавлены VS Code-native команды и Code Actions для selection workflows: `LunaCode: Edit Selection`, explain, fix, generate tests.
+- Добавлен `npm test` с unit smoke-тестом context budget manager.
+
+### Что это даёт относительно Continue-like планки
+
+Эта версия — не финальная реализация всех 12 фаз, а рабочий архитектурный фундамент: LunaCode уже перестал быть монолитным WebView+fetch и получил расширяемое ядро tools/context/provider contracts. Следующие фазы могут добавлять полноценный session manager, provider implementations на интерфейсе `AIProvider`, MCP adapters, diff accept/reject queue, inline completion cache и UI session selector без переписывания agent engine заново.

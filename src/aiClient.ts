@@ -22,33 +22,7 @@ export interface LunaCodeConfig {
  * Шлюз полностью OpenAI-совместимый: base URL https://hhchat.xyz/v1,
  * авторизация — обычный "Authorization: Bearer <token>".
  */
-export const HHCHAT_MODELS = [
-  "deepseek/deepseek-v4-flash",
-  "deepseek/deepseek-v3.2",
-  "deepseek/deepseek-v4-pro",
-  "deepseek/deepseek-r1",
-  "anthropic/claude-haiku-4.5",
-  "anthropic/claude-sonnet-5",
-  "anthropic/claude-opus-5",
-  "google/gemini-2.5-flash",
-  "google/gemini-2.5-pro",
-  "google/gemini-3.5-flash",
-  "google/gemini-3-deep-think",
-  "openai/gpt-5.4-mini",
-  "openai/gpt-5.6-luna-pro",
-  "openai/gpt-5.5",
-  "openai/gpt-5.6-sol-pro",
-  "openai/gpt-5.5-pro",
-  "openai/o1",
-  "x-ai/grok-build-0.1",
-  "x-ai/grok-4.20",
-  "x-ai/grok-4.20-multi-agent",
-  "x-ai/grok-4.5",
-  "moonshotai/kimi-k2.5",
-  "moonshotai/kimi-k2.6",
-  "moonshotai/kimi-k2.7-code",
-  "moonshotai/kimi-k3"
-];
+export { HHCHAT_MODELS } from "./providers/hhchat/models";
 
 export interface UsageInfo {
   inputTokens: number;
@@ -309,7 +283,8 @@ export async function checkHHChatBalance(apiKey: string): Promise<string> {
 
 async function readSSE(
   res: Response,
-  onEvent: (rawData: string) => void
+  onEvent: (rawData: string) => void,
+  signal?: AbortSignal
 ): Promise<void> {
   if (!res.body) throw new Error("Сервер не вернул поток ответа.");
   const reader = (res.body as any).getReader();
@@ -317,6 +292,7 @@ async function readSSE(
   let buffer = "";
 
   while (true) {
+    if (signal?.aborted) { try { await reader.cancel(); } catch {} ; break; }
     const { value, done } = await reader.read();
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
@@ -348,7 +324,8 @@ export interface StreamDeltaEvent {
 export async function streamChatMessage(
   config: LunaCodeConfig,
   history: ChatMessage[],
-  onDelta: (evt: StreamDeltaEvent) => void
+  onDelta: (evt: StreamDeltaEvent) => void,
+  signal?: AbortSignal
 ): Promise<{ text: string; reasoning: string; usage: UsageInfo }> {
   if (!config.apiKey) {
     throw new Error(
@@ -401,7 +378,7 @@ export async function streamChatMessage(
       } catch {
         /* игнорируем неполные/служебные события */
       }
-    });
+    }, signal);
     const usage: UsageInfo = gotRealUsage
       ? { inputTokens, outputTokens, estimated: false }
       : {
@@ -464,7 +441,7 @@ export async function streamChatMessage(
     } catch {
       /* игнорируем неполные строки */
     }
-  });
+  }, signal);
   const usage: UsageInfo = gotRealUsage
     ? { inputTokens, outputTokens, estimated: false }
     : {
@@ -521,7 +498,8 @@ export async function runAgentTurn(
   config: LunaCodeConfig,
   history: ChatMessage[],
   onStep: (event: AgentStepEvent) => void,
-  confirmFn: ConfirmFn
+  confirmFn: ConfirmFn,
+  signal?: AbortSignal
 ): Promise<{ text: string; usage: UsageInfo }> {
   if (!config.apiKey) {
     throw new Error(
@@ -535,6 +513,7 @@ export async function runAgentTurn(
     const msgs: any[] = history.map((m) => ({ role: m.role, content: m.content }));
 
     for (let step = 0; step < MAX_AGENT_STEPS; step++) {
+      if (signal?.aborted) throw new Error("Операция отменена пользователем.");
       const res = await fetch(url, {
         method: "POST",
         headers: {
@@ -542,6 +521,7 @@ export async function runAgentTurn(
           "x-api-key": config.apiKey,
           "anthropic-version": "2023-06-01"
         },
+        signal,
         body: JSON.stringify({
           model: config.model,
           max_tokens: config.maxTokens,
@@ -576,7 +556,7 @@ export async function runAgentTurn(
       const toolResults: any[] = [];
       for (const tu of toolUses) {
         onStep({ type: "tool-call", tool: tu.name, args: tu.input });
-        const result = await executeTool(tu.name, tu.input ?? {}, confirmFn);
+        const result = await executeTool(tu.name, tu.input ?? {}, confirmFn, signal);
         onStep({ type: "tool-result", tool: tu.name, text: result });
         toolResults.push({
           type: "tool_result",
@@ -596,12 +576,14 @@ export async function runAgentTurn(
   ];
 
   for (let step = 0; step < MAX_AGENT_STEPS; step++) {
+    if (signal?.aborted) throw new Error("Операция отменена пользователем.");
     const res = await fetch(url, {
       method: "POST",
       headers: {
         "content-type": "application/json",
         authorization: `Bearer ${config.apiKey}`
       },
+      signal,
       body: JSON.stringify({
         model: config.model,
         temperature: config.temperature,
@@ -638,7 +620,7 @@ export async function runAgentTurn(
         /* некорректный JSON от модели — оставляем пустые args */
       }
       onStep({ type: "tool-call", tool: call.function?.name, args });
-      const result = await executeTool(call.function?.name, args, confirmFn);
+      const result = await executeTool(call.function?.name, args, confirmFn, signal);
       onStep({ type: "tool-result", tool: call.function?.name, text: result });
       msgs.push({
         role: "tool",

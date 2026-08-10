@@ -283,3 +283,5 @@ body {
 #send:hover {
   background: var(--vscode-button-hoverBackground);
 }
+#stop { background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); border: 1px solid var(--vscode-input-border, transparent); border-radius: 6px; width: 30px; height: 30px; cursor: pointer; }
+#send:disabled { opacity: 0.45; cursor: wait; }
