@@ -151,6 +151,34 @@ export function activate(context: vscode.ExtensionContext) {
       chatProvider.prefillFromSelection(code, languageId);
     })
   );
+
+  const sendSelectionWithInstruction = async (instruction: string) => {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor || editor.selection.isEmpty) { vscode.window.showInformationMessage("Сначала выделите код в редакторе."); return; }
+    const code = editor.document.getText(editor.selection);
+    await vscode.commands.executeCommand("lunacode.chatView.focus");
+    chatProvider.prefillFromSelection(`${instruction}\n\nФайл: ${editor.document.fileName}\n\n\`\`\`${editor.document.languageId}\n${code}\n\`\`\``, editor.document.languageId);
+  };
+  context.subscriptions.push(vscode.commands.registerCommand("lunacode.editSelection", async () => {
+    const instruction = await vscode.window.showInputBox({ prompt: "Что изменить в выделенном коде?", value: "Оптимизируй этот код и покажи минимальный patch/diff" });
+    if (instruction) await sendSelectionWithInstruction(instruction);
+  }));
+  context.subscriptions.push(vscode.commands.registerCommand("lunacode.explainSelection", () => sendSelectionWithInstruction("Explain this code clearly:")));
+  context.subscriptions.push(vscode.commands.registerCommand("lunacode.fixSelection", () => sendSelectionWithInstruction("Find and fix bugs in this code. Prefer minimal edits:")));
+  context.subscriptions.push(vscode.commands.registerCommand("lunacode.generateTests", () => sendSelectionWithInstruction("Generate meaningful tests for this code:")));
+
+  context.subscriptions.push(vscode.languages.registerCodeActionsProvider({ scheme: "file" }, {
+    provideCodeActions(document, range) {
+      if (range.isEmpty) return [];
+      const actions = [
+        ["Explain with LunaCode", "lunacode.explainSelection"],
+        ["Fix with LunaCode", "lunacode.fixSelection"],
+        ["Generate tests with LunaCode", "lunacode.generateTests"],
+        ["Edit Selection with LunaCode", "lunacode.editSelection"]
+      ];
+      return actions.map(([title, command]) => { const a = new vscode.CodeAction(title, vscode.CodeActionKind.Refactor); a.command = { title, command }; return a; });
+    }
+  }));
 }
 
 async function resolveTargetFolder(uri?: vscode.Uri): Promise<vscode.Uri | undefined> {

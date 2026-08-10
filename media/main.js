@@ -3,6 +3,7 @@
   const messagesEl = document.getElementById("messages");
   const inputEl = document.getElementById("input");
   const sendBtn = document.getElementById("send");
+  const stopBtn = document.getElementById("stop");
   const terminalBtn = document.getElementById("terminal-btn");
   const modeChatBtn = document.getElementById("mode-chat");
   const modeAgentBtn = document.getElementById("mode-agent");
@@ -123,12 +124,15 @@
   function send() {
     const text = inputEl.value.trim();
     if (!text) return;
+    sendBtn.disabled = true;
+    stopBtn.hidden = false;
     vscode.postMessage({ type: "send", text });
     inputEl.value = "";
     autoGrow();
   }
 
   sendBtn.addEventListener("click", send);
+  stopBtn.addEventListener("click", () => vscode.postMessage({ type: "stop" }));
   inputEl.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -197,11 +201,19 @@
         break;
 
       case "assistantMessage": {
+        sendBtn.disabled = false;
+        stopBtn.hidden = true;
         if (typingEl) { typingEl.remove(); typingEl = null; }
         const m = addMessage("", "assistant");
         updateMessage(m, msg.text);
         break;
       }
+
+      case "requestFinished":
+      case "stopped":
+        sendBtn.disabled = false;
+        stopBtn.hidden = true;
+        break;
 
       case "assistantError":
         if (typingEl) { typingEl.remove(); typingEl = null; }

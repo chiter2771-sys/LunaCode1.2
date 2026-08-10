@@ -23,6 +23,7 @@ export class LunaCodeChatViewProvider implements vscode.WebviewViewProvider {
   private agentMode = false;
   private totalUsage: UsageInfo = { inputTokens: 0, outputTokens: 0, estimated: false };
   private configListenerRegistered = false;
+  private activeController?: AbortController;
 
   constructor(private readonly context: vscode.ExtensionContext) {
     this.history = this.loadHistory();
@@ -76,7 +77,11 @@ export class LunaCodeChatViewProvider implements vscode.WebviewViewProvider {
     webviewView.webview.onDidReceiveMessage(async (msg) => {
       switch (msg.type) {
         case "send":
-          await this.handleSend(msg.text as string);
+          if (typeof msg.text === "string") await this.handleSend(msg.text);
+          break;
+        case "stop":
+          this.activeController?.abort();
+          this.post({ type: "stopped" });
           break;
         case "clear":
           this.history = [];
@@ -181,6 +186,9 @@ export class LunaCodeChatViewProvider implements vscode.WebviewViewProvider {
     this.post({ type: "userMessage", text });
 
     try {
+      this.activeController?.abort();
+      const controller = new AbortController();
+      this.activeController = controller;
       const config = await getConfig(this.context);
 
       if (this.agentMode) {
@@ -200,7 +208,7 @@ export class LunaCodeChatViewProvider implements vscode.WebviewViewProvider {
             this.post({ type: "agentStep", text: `↳ Результат: ${truncate(evt.text ?? "", 300)}` });
           }
         };
-        const { text: reply, usage } = await runAgentTurn(config, this.history, onStep, confirmFn);
+        const { text: reply, usage } = await runAgentTurn(config, this.history, onStep, confirmFn, controller.signal);
         this.history.push({ role: "assistant", content: reply });
         await this.saveHistory();
         this.post({ type: "assistantMessage", text: reply });
@@ -212,7 +220,7 @@ export class LunaCodeChatViewProvider implements vscode.WebviewViewProvider {
             type: evt.type === "reasoning" ? "assistantReasoningChunk" : "assistantStreamChunk",
             text: evt.text
           });
-        });
+        }, controller.signal);
         this.history.push({ role: "assistant", content: reply });
         await this.saveHistory();
         // reply передаём и сюда — если контент не пришёл кусками (весь ответ
@@ -221,7 +229,10 @@ export class LunaCodeChatViewProvider implements vscode.WebviewViewProvider {
         this.accumulateUsage(usage);
       }
     } catch (err: any) {
-      this.post({ type: "assistantError", text: err?.message ?? String(err) });
+      this.post({ type: "assistantError", text: err?.name === "AbortError" ? "Операция отменена пользователем." : (err?.message ?? String(err)) });
+    } finally {
+      this.activeController = undefined;
+      this.post({ type: "requestFinished" });
     }
   }
 
@@ -274,6 +285,7 @@ export class LunaCodeChatViewProvider implements vscode.WebviewViewProvider {
     <div id="input-row">
       <button id="terminal-btn" title="Открыть терминал LunaCode">⌘</button>
       <textarea id="input" placeholder="Спросите ИИ-агента LunaCode..." rows="1"></textarea>
+      <button id="stop" title="Остановить" hidden>■</button>
       <button id="send" title="Отправить (Enter)">➤</button>
     </div>
   </div>

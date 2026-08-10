@@ -7,7 +7,11 @@
   "engines": {
     "vscode": "^1.85.0"
   },
-  "categories": ["AI", "Chat", "Other"],
+  "categories": [
+    "AI",
+    "Chat",
+    "Other"
+  ],
   "activationEvents": [
     "onView:lunacode.chatView"
   ],
@@ -70,6 +74,22 @@
       {
         "command": "lunacode.sendSelectionToChat",
         "title": "LunaCode: Отправить выделение в чат"
+      },
+      {
+        "command": "lunacode.editSelection",
+        "title": "LunaCode: Edit Selection"
+      },
+      {
+        "command": "lunacode.explainSelection",
+        "title": "LunaCode: Explain with LunaCode"
+      },
+      {
+        "command": "lunacode.fixSelection",
+        "title": "LunaCode: Fix with LunaCode"
+      },
+      {
+        "command": "lunacode.generateTests",
+        "title": "LunaCode: Generate Tests"
       }
     ],
     "menus": {
@@ -100,6 +120,26 @@
           "command": "lunacode.sendSelectionToChat",
           "when": "editorHasSelection",
           "group": "9_cutcopypaste"
+        },
+        {
+          "command": "lunacode.editSelection",
+          "when": "editorHasSelection",
+          "group": "lunacode"
+        },
+        {
+          "command": "lunacode.explainSelection",
+          "when": "editorHasSelection",
+          "group": "lunacode"
+        },
+        {
+          "command": "lunacode.fixSelection",
+          "when": "editorHasSelection",
+          "group": "lunacode"
+        },
+        {
+          "command": "lunacode.generateTests",
+          "when": "editorHasSelection",
+          "group": "lunacode"
         }
       ]
     },
@@ -116,7 +156,12 @@
       "properties": {
         "lunacode.provider": {
           "type": "string",
-          "enum": ["anthropic", "openai", "hhchat", "custom-openai-compatible"],
+          "enum": [
+            "anthropic",
+            "openai",
+            "hhchat",
+            "custom-openai-compatible"
+          ],
           "enumDescriptions": [
             "Официальный API Anthropic (api.anthropic.com)",
             "Официальный API OpenAI (api.openai.com)",
@@ -160,6 +205,22 @@
           "type": "number",
           "default": 0,
           "description": "Цена в USD за 1 млн выходных токенов для выбранной модели (узнайте у провайдера). 0 — стоимость не показывается, только количество токенов."
+        },
+        "lunacode.validationCommands": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "npm test",
+            "npm run compile"
+          ],
+          "description": "Команды автоматической проверки, которые агент может запускать после изменений."
+        },
+        "lunacode.inlineCompletion.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Включить экспериментальные inline completions LunaCode."
         }
       }
     }
@@ -167,7 +228,8 @@
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./"
+    "watch": "tsc -watch -p ./",
+    "test": "npm run compile && node test/unit.js"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
