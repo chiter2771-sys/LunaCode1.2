@@ -1,0 +1,177 @@
+{
+  "name": "lunacode",
+  "displayName": "LunaCode",
+  "description": "LunaCode — рабочее пространство с ИИ-агентом внутри VS Code: чат, гибкое подключение LLM, терминал и файловый проводник.",
+  "version": "0.1.0",
+  "publisher": "lunacode",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["AI", "Chat", "Other"],
+  "activationEvents": [
+    "onView:lunacode.chatView"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "lunacode-sidebar",
+          "title": "LunaCode",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "lunacode-sidebar": [
+        {
+          "type": "webview",
+          "id": "lunacode.chatView",
+          "name": "AI Чат"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "lunacode.openTerminal",
+        "title": "LunaCode: Открыть терминал",
+        "icon": "$(terminal)"
+      },
+      {
+        "command": "lunacode.newFile",
+        "title": "LunaCode: Новый файл",
+        "icon": "$(new-file)"
+      },
+      {
+        "command": "lunacode.newFolder",
+        "title": "LunaCode: Новая папка",
+        "icon": "$(new-folder)"
+      },
+      {
+        "command": "lunacode.setApiKey",
+        "title": "LunaCode: Указать API-ключ ИИ-агента"
+      },
+      {
+        "command": "lunacode.clearChat",
+        "title": "LunaCode: Очистить чат"
+      },
+      {
+        "command": "lunacode.openSettings",
+        "title": "LunaCode: Настройки подключения ИИ"
+      },
+      {
+        "command": "lunacode.checkHHChatBalance",
+        "title": "LunaCode: Проверить баланс HHChat Pro"
+      },
+      {
+        "command": "lunacode.selectModel",
+        "title": "LunaCode: Выбрать модель"
+      },
+      {
+        "command": "lunacode.sendSelectionToChat",
+        "title": "LunaCode: Отправить выделение в чат"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "lunacode.openTerminal",
+          "when": "view == lunacode.chatView",
+          "group": "navigation"
+        },
+        {
+          "command": "lunacode.clearChat",
+          "when": "view == lunacode.chatView",
+          "group": "navigation"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "lunacode.newFile",
+          "group": "navigation"
+        },
+        {
+          "command": "lunacode.newFolder",
+          "group": "navigation"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "lunacode.sendSelectionToChat",
+          "when": "editorHasSelection",
+          "group": "9_cutcopypaste"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "lunacode.sendSelectionToChat",
+        "key": "ctrl+alt+l",
+        "mac": "cmd+alt+l",
+        "when": "editorHasSelection"
+      }
+    ],
+    "configuration": {
+      "title": "LunaCode",
+      "properties": {
+        "lunacode.provider": {
+          "type": "string",
+          "enum": ["anthropic", "openai", "hhchat", "custom-openai-compatible"],
+          "enumDescriptions": [
+            "Официальный API Anthropic (api.anthropic.com)",
+            "Официальный API OpenAI (api.openai.com)",
+            "Шлюз HHChat Pro (hhchat.xyz) — доступ к Claude, GPT, Gemini, DeepSeek, Grok, Kimi через один ключ",
+            "Любой другой OpenAI-совместимый сервер: локальные модели (Ollama, LM Studio, vLLM) или свой прокси"
+          ],
+          "default": "anthropic",
+          "description": "Какой ИИ-провайдер использовать."
+        },
+        "lunacode.model": {
+          "type": "string",
+          "default": "claude-sonnet-4-6",
+          "description": "Название модели, которое будет отправлено провайдеру."
+        },
+        "lunacode.baseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Базовый URL API. Оставьте пустым для официальных endpoint'ов Anthropic/OpenAI. Укажите свой URL для custom-openai-compatible (например http://localhost:11434/v1)."
+        },
+        "lunacode.systemPrompt": {
+          "type": "string",
+          "default": "Ты — ИИ-агент внутри среды разработки LunaCode. Помогай писать, объяснять и исправлять код. Отвечай кратко и по делу.",
+          "description": "Системный промпт для ИИ-агента."
+        },
+        "lunacode.maxTokens": {
+          "type": "number",
+          "default": 2048,
+          "description": "Максимум токенов в ответе модели."
+        },
+        "lunacode.temperature": {
+          "type": "number",
+          "default": 0.4,
+          "description": "Температура генерации ответа."
+        },
+        "lunacode.pricePerMillionInputTokens": {
+          "type": "number",
+          "default": 0,
+          "description": "Цена в USD за 1 млн входных токенов для выбранной модели (узнайте у провайдера). 0 — стоимость не показывается, только количество токенов."
+        },
+        "lunacode.pricePerMillionOutputTokens": {
+          "type": "number",
+          "default": 0,
+          "description": "Цена в USD за 1 млн выходных токенов для выбранной модели (узнайте у провайдера). 0 — стоимость не показывается, только количество токенов."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.4.0"
+  }
+}
