@@ -1,5 +1,6 @@
 (function () {
-  const vscode = acquireVsCodeApi();
+  const isVsCodeHost = typeof acquireVsCodeApi === "function";
+  const vscode = isVsCodeHost ? acquireVsCodeApi() : createWebRuntime();
   const messagesEl = document.getElementById("messages");
   const inputEl = document.getElementById("input");
   const sendBtn = document.getElementById("send");
@@ -45,7 +46,9 @@
     wrap.appendChild(body);
     messagesEl.appendChild(wrap);
     messagesEl.scrollTop = messagesEl.scrollHeight;
-    return { wrap, body, raw: "" };
+    const msgObj = { wrap, body, raw: "" };
+    if (text) updateMessage(msgObj, text);
+    return msgObj;
   }
 
   function updateMessage(msgObj, deltaText) {
@@ -140,7 +143,7 @@
     }
   });
 
-  /* ---------------- сообщения от extension host ---------------- */
+  /* ---------------- сообщения от extension host / web runtime ---------------- */
 
   window.addEventListener("message", (event) => {
     const msg = event.data;
@@ -191,8 +194,6 @@
         break;
 
       case "assistantStreamEnd":
-        // Если контент не приходил кусками (модель отдала весь ответ через
-        // "рассуждения"), подставляем финальный текст как обычный ответ.
         if (!streamMsg && msg.text) {
           streamMsg = addMessage("", "assistant");
           updateMessage(streamMsg, msg.text);
@@ -256,4 +257,148 @@
         break;
     }
   });
+
+  function createWebRuntime() {
+    const storageKey = "lunacode.web";
+    const state = loadState();
+    let controller = null;
+
+    setTimeout(() => {
+      state.history.forEach((m) => emit({ type: m.role === "user" ? "userMessage" : "assistantMessage", text: m.content }));
+      emit({ type: "initAgentMode", value: state.agentMode });
+      emit({ type: "modelInfo", provider: state.provider, model: state.model });
+      emitUsage();
+      if (!state.apiKey) {
+        emit({ type: "assistantMessage", text: "Добро пожаловать в LunaCode Web. Нажмите на бейдж модели сверху, укажите OpenAI-compatible endpoint и API-ключ, затем задайте вопрос. Интерфейс и логика чата общие с VS Code расширением." });
+      }
+    }, 0);
+
+    return { postMessage };
+
+    async function postMessage(msg) {
+      if (msg.type === "setAgentMode") {
+        state.agentMode = !!msg.value;
+        saveState();
+        return;
+      }
+      if (msg.type === "resetUsage") {
+        state.usage = { inputTokens: 0, outputTokens: 0, estimated: false };
+        saveState();
+        emitUsage();
+        return;
+      }
+      if (msg.type === "openTerminal") {
+        emit({ type: "assistantMessage", text: "В веб-версии терминал VS Code недоступен. Для терминала используйте расширение LunaCode внутри VS Code." });
+        return;
+      }
+      if (msg.type === "selectModel") {
+        openSettingsPrompt();
+        return;
+      }
+      if (msg.type === "stop") {
+        controller?.abort();
+        emit({ type: "stopped" });
+        return;
+      }
+      if (msg.type === "send" && typeof msg.text === "string") {
+        await sendToModel(msg.text);
+      }
+    }
+
+    async function sendToModel(text) {
+      state.history.push({ role: "user", content: text });
+      trimHistory();
+      saveState();
+      emit({ type: "userMessage", text });
+
+      if (state.agentMode) {
+        emit({ type: "assistantMessage", text: "Agent-режим с доступом к файлам работает только в VS Code расширении. В LunaCode Web доступен безопасный чат без файловых инструментов." });
+        emit({ type: "requestFinished" });
+        return;
+      }
+      if (!state.apiKey || !state.baseUrl || !state.model) {
+        emit({ type: "assistantError", text: "Не настроены baseUrl, model или API-ключ. Нажмите на бейдж модели сверху." });
+        emit({ type: "requestFinished" });
+        return;
+      }
+
+      controller?.abort();
+      controller = new AbortController();
+      emit({ type: "assistantStreamStart" });
+      let reply = "";
+      try {
+        const response = await fetch(state.baseUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${state.apiKey}` },
+          body: JSON.stringify({ model: state.model, messages: state.history.slice(-20), stream: true, temperature: state.temperature }),
+          signal: controller.signal
+        });
+        if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+          for (const line of lines) {
+            const data = line.trim().replace(/^data:\s*/, "");
+            if (!data || data === "[DONE]") continue;
+            const json = JSON.parse(data);
+            const delta = json.choices?.[0]?.delta?.content || "";
+            if (delta) {
+              reply += delta;
+              emit({ type: "assistantStreamChunk", text: delta });
+            }
+            if (json.usage) accumulateUsage(json.usage.prompt_tokens || 0, json.usage.completion_tokens || 0, false);
+          }
+        }
+        emit({ type: "assistantStreamEnd", text: reply });
+        if (reply) state.history.push({ role: "assistant", content: reply });
+        if (!state.usageUpdatedByProvider) accumulateUsage(estimateTokens(text), estimateTokens(reply), true);
+        state.usageUpdatedByProvider = false;
+        trimHistory();
+        saveState();
+      } catch (err) {
+        emit({ type: "assistantError", text: err.name === "AbortError" ? "Операция отменена пользователем." : err.message });
+      } finally {
+        controller = null;
+        emit({ type: "requestFinished" });
+      }
+    }
+
+    function openSettingsPrompt() {
+      const baseUrl = prompt("OpenAI-compatible chat completions URL", state.baseUrl || "https://api.openai.com/v1/chat/completions");
+      if (baseUrl === null) return;
+      const model = prompt("Model", state.model || "gpt-4o-mini");
+      if (model === null) return;
+      const apiKey = prompt("API key (хранится только в localStorage браузера)", state.apiKey || "");
+      if (apiKey === null) return;
+      state.provider = "web-openai-compatible";
+      state.baseUrl = baseUrl.trim();
+      state.model = model.trim();
+      state.apiKey = apiKey.trim();
+      saveState();
+      emit({ type: "modelInfo", provider: state.provider, model: state.model });
+    }
+
+    function accumulateUsage(inputTokens, outputTokens, estimated) {
+      state.usage.inputTokens += inputTokens;
+      state.usage.outputTokens += outputTokens;
+      state.usage.estimated = state.usage.estimated || estimated;
+      state.usageUpdatedByProvider = !estimated;
+      saveState();
+      emitUsage({ inputTokens, outputTokens, estimated });
+    }
+    function emitUsage(last) { emit({ type: "usageUpdate", total: state.usage, last, showCost: false }); }
+    function emit(data) { window.dispatchEvent(new MessageEvent("message", { data })); }
+    function estimateTokens(text) { return Math.ceil(String(text || "").length / 4); }
+    function trimHistory() { state.history = state.history.slice(-60); }
+    function loadState() {
+      return { provider: "web-openai-compatible", model: "", baseUrl: "", apiKey: "", temperature: 0.4, agentMode: false, history: [], usage: { inputTokens: 0, outputTokens: 0, estimated: false }, ...JSON.parse(localStorage.getItem(storageKey) || "{}") };
+    }
+    function saveState() { localStorage.setItem(storageKey, JSON.stringify(state)); }
+  }
 })();

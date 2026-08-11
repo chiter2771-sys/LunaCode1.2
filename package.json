@@ -229,7 +229,10 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "test": "npm run compile && node test/unit.js"
+    "test": "npm run compile && node test/unit.js",
+    "web": "node scripts/serve-web.js",
+    "start": "node scripts/serve-web.js",
+    "build": "npm run compile"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",

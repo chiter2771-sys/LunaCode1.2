@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="../media/style.css" />
+  <title>LunaCode Web</title>
+</head>
+<body class="lunacode-web">
+  <div class="web-shell">
+    <header class="titlebar">
+      <div class="window-dots"><span></span><span></span><span></span></div>
+      <strong>LunaCode Web</strong>
+      <span>VS Code-like workspace for AI coding</span>
+    </header>
+    <nav class="activitybar" aria-label="Activity Bar">
+      <span>📁</span><span class="active">🌙</span><span>🔎</span><span>⑂</span>
+    </nav>
+    <aside class="explorer">
+      <h2>EXPLORER</h2>
+      <ul class="file-tree">
+        <li>▾ LunaCode</li>
+        <li><ul>
+          <li>▾ src</li>
+          <li><ul><li class="selected">chatViewProvider.ts</li><li>aiClient.ts</li></ul></li>
+          <li>▾ media</li>
+          <li><ul><li>main.js</li><li>style.css</li></ul></li>
+          <li>package.json</li>
+        </ul></li>
+      </ul>
+    </aside>
+    <main class="editor">
+      <h2>chatViewProvider.ts</h2>
+      <pre><code>export class LunaCodeChatViewProvider {
+  // Webview UI is shared with LunaCode Web.
+  // Open the LunaCode panel on the right to chat.
+}</code></pre>
+    </main>
+    <section class="web-chat-panel" aria-label="LunaCode Chat">
+      <div id="app">
+        <div id="header">
+          <div id="mode-switch">
+            <button class="mode-btn" id="mode-chat" data-mode="chat" title="Обычный чат">💬 Chat</button>
+            <button class="mode-btn" id="mode-agent" data-mode="agent" title="ИИ может читать и писать файлы">🤖 Agent</button>
+          </div>
+          <button id="model-badge" title="Сменить модель">Модель: …</button>
+        </div>
+        <div id="messages"></div>
+        <div id="footer">
+          <div id="usage-bar">
+            <span id="usage-text">Токены: —</span>
+            <button id="usage-reset" title="Сбросить счётчик токенов">↺</button>
+          </div>
+          <div id="input-row">
+            <button id="terminal-btn" title="Открыть терминал LunaCode">⌘</button>
+            <textarea id="input" placeholder="Спросите ИИ-агента LunaCode..." rows="1"></textarea>
+            <button id="stop" title="Остановить" hidden>■</button>
+            <button id="send" title="Отправить (Enter)">➤</button>
+          </div>
+        </div>
+      </div>
+    </section>
+    <footer class="statusbar"><span>$(lunacode) LunaCode</span><span>Web Preview</span><span>OpenAI-compatible</span></footer>
+  </div>
+  <script src="../media/main.js"></script>
+</body>
+</html>
