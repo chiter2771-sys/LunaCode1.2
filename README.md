@@ -51,7 +51,7 @@ npm start
 Локально откройте `http://localhost:4173/web/` — вы увидите рабочее пространство в стиле VS Code, стилизованное под LunaCode: activity bar, explorer, редактор и правую панель чата. Панель чата использует тот же `media/main.js` и `media/style.css`, что и webview расширения, поэтому изменения UI/UX остаются общими для VS Code и браузера.
 
 
-Для Railway в репозитории есть `railway.json`: он явно запускает `npm start`, поэтому контейнер стартует веб-сервером, а не пытается выполнить VS Code entrypoint `out/extension.js`. `main` в `package.json` остаётся `./out/extension.js`, потому что это необходимо для работы расширения VS Code.
+Для Railway в репозитории есть сразу несколько явных подсказок запуска (`railway.json`, `nixpacks.toml`, `Procfile`): они запускают `npm start`, поэтому контейнер стартует веб-сервером, а не пытается выполнить VS Code entrypoint `out/extension.js`. Сервер слушает `process.env.PORT` на `0.0.0.0` и отдаёт healthcheck `/healthz`. `main` в `package.json` остаётся `./out/extension.js`, потому что это необходимо для работы расширения VS Code.
 
 В браузере нажмите бейдж модели сверху и задайте OpenAI-compatible `chat/completions` URL, модель и API-ключ. Настройки, история и счётчики сохраняются только в `localStorage` текущего браузера. Файловые инструменты agent-режима и терминал намеренно доступны только в VS Code расширении, чтобы веб-страница не получала прямой доступ к файловой системе пользователя.
 
